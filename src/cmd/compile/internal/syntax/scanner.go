@@ -101,7 +101,7 @@ redo:
 	s.line, s.col = s.pos()
 	s.blank = s.line > startLine || startCol == colbase
 	s.start()
-	if isLetter(s.ch) || s.ch >= utf8.RuneSelf && s.atIdentChar(true) {
+	if isLetter(s.ch) || s.ch >= utf8.RuneSelf && !isDoubleQuote(s.ch) && !isSingleQuote(s.ch) && s.atIdentChar(true) {
 		s.nextch()
 		s.ident()
 		return
@@ -124,13 +124,13 @@ redo:
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 		s.number(false)
 
-	case '"':
+	case '"', '\u201C', '\u201D':
 		s.stdString()
 
 	case '`':
 		s.rawString()
 
-	case '\'':
+	case '\'', '\u2018', '\u2019':
 		s.rune()
 
 	case '(':
@@ -434,6 +434,9 @@ func init() {
 	}
 }
 
+func isDoubleQuote(ch rune) bool { return ch == '"' || ch == '\u201C' || ch == '\u201D' }
+func isSingleQuote(ch rune) bool { return ch == '\'' || ch == '\u2018' || ch == '\u2019' }
+
 func lower(ch rune) rune     { return ('a' - 'A') | ch } // returns lower-case ch iff ch is ASCII letter
 func isLetter(ch rune) bool  { return 'a' <= lower(ch) && lower(ch) <= 'z' || ch == '_' }
 func isDecimal(ch rune) bool { return '0' <= ch && ch <= '9' }
@@ -631,7 +634,7 @@ func (s *scanner) rune() {
 
 	n := 0
 	for ; ; n++ {
-		if s.ch == '\'' {
+		if isSingleQuote(s.ch) {
 			if ok {
 				if n == 0 {
 					s.errorf("empty rune literal or unescaped '")
@@ -676,7 +679,7 @@ func (s *scanner) stdString() {
 	s.nextch()
 
 	for {
-		if s.ch == '"' {
+		if isDoubleQuote(s.ch) {
 			s.nextch()
 			break
 		}
@@ -825,9 +828,26 @@ func (s *scanner) escape(quote rune) bool {
 	var base, max uint32
 
 	switch s.ch {
-	case quote, 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\':
+	case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\':
 		s.nextch()
 		return true
+	case quote:
+		s.nextch()
+		return true
+	case '\u201C', '\u201D':
+		if isDoubleQuote(quote) {
+			s.nextch()
+			return true
+		}
+		s.errorf("unknown escape")
+		return false
+	case '\u2018', '\u2019':
+		if isSingleQuote(quote) {
+			s.nextch()
+			return true
+		}
+		s.errorf("unknown escape")
+		return false
 	case '0', '1', '2', '3', '4', '5', '6', '7':
 		n, base, max = 3, 8, 255
 	case 'x':

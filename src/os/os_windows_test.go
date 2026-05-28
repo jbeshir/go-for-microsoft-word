@@ -709,7 +709,7 @@ func TestReadStdin(t *testing.T) {
 		"abc",
 		"äöü",
 		"\u3042",
-		"“hi”™",
+		"\u201Chi\u201D™",
 		"hello\x1aworld",
 		"\U0001F648\U0001F649\U0001F64A",
 	}

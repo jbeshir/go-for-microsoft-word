@@ -465,6 +465,12 @@ values in various formats.
 </p>
 
 <p>
+The left and right single quotation marks <code>&#x2018;</code> (U+2018) and
+<code>&#x2019;</code> (U+2019) are also accepted as opening or closing
+delimiters of a rune literal.
+</p>
+
+<p>
 The simplest form represents the single character within the quotes;
 since Go source text is Unicode characters encoded in UTF-8, multiple
 UTF-8-encoded bytes may represent a single integer value.  For
@@ -507,8 +513,8 @@ After a backslash, certain single-character escapes represent special values:
 \t   U+0009 horizontal tab
 \v   U+000B vertical tab
 \\   U+005C backslash
-\'   U+0027 single quote  (valid escape only within rune literals)
-\"   U+0022 double quote  (valid escape only within string literals)
+\'   U+0027 single quote  (valid escape only within rune literals; \&#x2018; and \&#x2019; also accepted)
+\"   U+0022 double quote  (valid escape only within string literals; \&#x201C; and \&#x201D; also accepted)
 </pre>
 
 <p>
@@ -516,7 +522,8 @@ An unrecognized character following a backslash in a rune literal is illegal.
 </p>
 
 <pre class="ebnf">
-rune_lit         = "'" ( unicode_value | byte_value ) "'" .
+rune_lit         = single_quote ( unicode_value | byte_value ) single_quote .
+single_quote     = "'" | "&#x2018;" | "&#x2019;" .
 unicode_value    = unicode_char | little_u_value | big_u_value | escaped_char .
 byte_value       = octal_byte_value | hex_byte_value .
 octal_byte_value = `\` octal_digit octal_digit octal_digit .
@@ -524,7 +531,7 @@ hex_byte_value   = `\` "x" hex_digit hex_digit .
 little_u_value   = `\` "u" hex_digit hex_digit hex_digit hex_digit .
 big_u_value      = `\` "U" hex_digit hex_digit hex_digit hex_digit
                            hex_digit hex_digit hex_digit hex_digit .
-escaped_char     = `\` ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | `\` | "'" | `"` ) .
+escaped_char     = `\` ( "a" | "b" | "f" | "n" | "r" | "t" | "v" | `\` | single_quote | double_quote ) .
 </pre>
 
 <pre>
@@ -589,10 +596,17 @@ the two bytes <code>0xc3</code> <code>0xbf</code> of the UTF-8 encoding of chara
 U+00FF.
 </p>
 
+<p>
+The left and right double quotation marks <code>&#x201C;</code> (U+201C) and
+<code>&#x201D;</code> (U+201D) are also accepted as opening or closing
+delimiters of an interpreted string literal.
+</p>
+
 <pre class="ebnf">
 string_lit             = raw_string_lit | interpreted_string_lit .
 raw_string_lit         = "`" { unicode_char | newline } "`" .
-interpreted_string_lit = `"` { unicode_value | byte_value } `"` .
+interpreted_string_lit = double_quote { unicode_value | byte_value } double_quote .
+double_quote           = `"` | "&#x201C;" | "&#x201D;" .
 </pre>
 
 <pre>

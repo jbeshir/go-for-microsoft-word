@@ -867,6 +867,9 @@ func (p *printer) expr1(expr ast.Expr, prec1, depth int) {
 		if p.Config.Mode&normalizeNumbers != 0 {
 			x = normalizedNumber(x)
 		}
+		if p.Config.Mode&normalizeQuotes != 0 {
+			x = normalizedQuote(x)
+		}
 		p.print(x)
 
 	case *ast.FuncLit:
@@ -1141,6 +1144,43 @@ func normalizedNumber(lit *ast.BasicLit) *ast.BasicLit {
 	}
 
 	return &ast.BasicLit{ValuePos: lit.ValuePos, Kind: lit.Kind, Value: x}
+}
+
+// normalizedQuote rewrites curly-quote delimiters of string and rune literals
+// to their ASCII forms. Body content (including any \<curly> escape sequences)
+// is left untouched. Raw string literals (backtick-delimited) are left alone.
+//
+// normalizedQuote doesn't modify the ast.BasicLit value lit points to.
+// If lit doesn't need normalization, lit is returned as is. Otherwise a new
+// ast.BasicLit is created.
+func normalizedQuote(lit *ast.BasicLit) *ast.BasicLit {
+	if lit.Kind != token.STRING && lit.Kind != token.CHAR {
+		return lit
+	}
+	v := lit.Value
+	if len(v) < 2 {
+		return lit
+	}
+	openR, openSz := utf8.DecodeRuneInString(v)
+	closeR, closeSz := utf8.DecodeLastRuneInString(v)
+	var ascii rune
+	if lit.Kind == token.STRING {
+		if openR == '`' {
+			return lit // raw string — leave alone
+		}
+		ascii = '"'
+	} else {
+		ascii = '\''
+	}
+	if openR == ascii && closeR == ascii {
+		return lit // already canonical
+	}
+	var buf strings.Builder
+	buf.Grow(len(v))
+	buf.WriteRune(ascii)
+	buf.WriteString(v[openSz : len(v)-closeSz])
+	buf.WriteRune(ascii)
+	return &ast.BasicLit{ValuePos: lit.ValuePos, Kind: lit.Kind, Value: buf.String()}
 }
 
 func (p *printer) possibleSelectorExpr(expr ast.Expr, prec1, depth int) bool {

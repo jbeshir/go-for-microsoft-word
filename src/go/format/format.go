@@ -27,13 +27,19 @@ import (
 // Keep these in sync with cmd/gofmt/gofmt.go.
 const (
 	tabWidth    = 8
-	printerMode = printer.UseSpaces | printer.TabIndent | printerNormalizeNumbers
+	printerMode = printer.UseSpaces | printer.TabIndent | printerNormalizeNumbers | printerNormalizeQuotes
 
 	// printerNormalizeNumbers means to canonicalize number literal prefixes
 	// and exponents while printing. See https://golang.org/doc/go1.13#gofmt.
 	//
 	// This value is defined in go/printer specifically for go/format and cmd/gofmt.
 	printerNormalizeNumbers = 1 << 30
+
+	// printerNormalizeQuotes means to rewrite curly-quote delimiters of string
+	// and rune literals to their ASCII forms while printing.
+	//
+	// This value is defined in go/printer specifically for go/format and cmd/gofmt.
+	printerNormalizeQuotes = 1 << 29
 )
 
 var config = printer.Config{Mode: printerMode, Tabwidth: tabWidth}

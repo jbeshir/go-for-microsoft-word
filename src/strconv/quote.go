@@ -20,6 +20,59 @@ func contains(s string, c byte) bool {
 	return index(s, c) != -1
 }
 
+// quoteFamily reports whether r is a recognized opening or closing quote rune
+// and, if so, returns the ASCII canonical quote byte ('"', '\'', or '`') for
+// its family. U+201C/U+201D are aliases for '"'; U+2018/U+2019 are aliases
+// for '\''. Rune-literal forms use \uXXXX so the bootstrap toolchain can
+// parse this file before the curly-quote lexer change has been built in.
+func quoteFamily(r rune) (byte, bool) {
+	switch r {
+	case '"', '\u201C', '\u201D':
+		return '"', true
+	case '\'', '\u2018', '\u2019':
+		return '\'', true
+	case '`':
+		return '`', true
+	}
+	return 0, false
+}
+
+// isFamilyQuote reports whether r is one of the quote runes (including curly
+// aliases) belonging to the family identified by its canonical byte.
+func isFamilyQuote(r rune, family byte) bool {
+	switch family {
+	case '"':
+		return r == '"' || r == '\u201C' || r == '\u201D'
+	case '\'':
+		return r == '\'' || r == '\u2018' || r == '\u2019'
+	case '`':
+		return r == '`'
+	}
+	return false
+}
+
+// findCloseQuote scans s for the first byte (or rune) that belongs to the
+// quote family identified by its canonical byte, returning its offset within
+// s and UTF-8 size. Returns (-1, 0) if none is found.
+func findCloseQuote(s string, family byte) (offset, size int) {
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c < utf8.RuneSelf {
+			if c == family {
+				return i, 1
+			}
+			i++
+			continue
+		}
+		r, sz := utf8.DecodeRuneInString(s[i:])
+		if isFamilyQuote(r, family) {
+			return i, sz
+		}
+		i += sz
+	}
+	return -1, 0
+}
+
 func quoteWith(s string, quote byte, ASCIIonly, graphicOnly bool) string {
 	return string(appendQuotedWith(make([]byte, 0, 3*len(s)/2), s, quote, ASCIIonly, graphicOnly))
 }
@@ -274,6 +327,19 @@ func UnquoteChar(s string, quote byte) (value rune, multibyte bool, tail string,
 		err = ErrSyntax
 		return
 	}
+
+	// Backslash followed by a curly-quote variant of the family's escape:
+	// \“ / \” are aliases for \" inside double-quoted literals; \‘ / \’ are
+	// aliases for \' inside single-quoted literals.
+	if s[1] >= utf8.RuneSelf && (quote == '"' || quote == '\'') {
+		r, sz := utf8.DecodeRuneInString(s[1:])
+		if isFamilyQuote(r, quote) && r != rune(quote) {
+			value = rune(quote)
+			tail = s[1+sz:]
+			return
+		}
+	}
+
 	c := s[1]
 	s = s[2:]
 
@@ -393,12 +459,16 @@ func unquote(in string, unescape bool) (out, rem string, err error) {
 	if len(in) < 2 {
 		return "", in, ErrSyntax
 	}
-	quote := in[0]
-	end := index(in[1:], quote)
-	if end < 0 {
+	openR, openSz := utf8.DecodeRuneInString(in)
+	quote, ok := quoteFamily(openR)
+	if !ok {
 		return "", in, ErrSyntax
 	}
-	end += 2 // position after terminating quote; may be wrong if escape sequences are present
+	closeOff, closeSz := findCloseQuote(in[openSz:], quote)
+	if closeOff < 0 {
+		return "", in, ErrSyntax
+	}
+	end := openSz + closeOff + closeSz // position after terminating quote; may be wrong if escape sequences are present
 
 	switch quote {
 	case '`':
@@ -406,12 +476,12 @@ func unquote(in string, unescape bool) (out, rem string, err error) {
 		case !unescape:
 			out = in[:end] // include quotes
 		case !contains(in[:end], '\r'):
-			out = in[len("`") : end-len("`")] // exclude quotes
+			out = in[openSz : end-closeSz] // exclude quotes
 		default:
 			// Carriage return characters ('\r') inside raw string literals
 			// are discarded from the raw string value.
-			buf := make([]byte, 0, end-len("`")-len("\r")-len("`"))
-			for i := len("`"); i < end-len("`"); i++ {
+			buf := make([]byte, 0, end-openSz-closeSz)
+			for i := openSz; i < end-closeSz; i++ {
 				if in[i] != '\r' {
 					buf = append(buf, in[i])
 				}
@@ -428,17 +498,18 @@ func unquote(in string, unescape bool) (out, rem string, err error) {
 		// Handle quoted strings without any escape sequences.
 		if !contains(in[:end], '\\') && !contains(in[:end], '\n') {
 			var valid bool
+			body := in[openSz : end-closeSz]
 			switch quote {
 			case '"':
-				valid = utf8.ValidString(in[len(`"`) : end-len(`"`)])
+				valid = utf8.ValidString(body)
 			case '\'':
-				r, n := utf8.DecodeRuneInString(in[len("'") : end-len("'")])
-				valid = len("'")+n+len("'") == end && (r != utf8.RuneError || n != 1)
+				r, n := utf8.DecodeRuneInString(body)
+				valid = n == len(body) && (r != utf8.RuneError || n != 1)
 			}
 			if valid {
 				out = in[:end]
 				if unescape {
-					out = out[1 : end-1] // exclude quotes
+					out = body // exclude quotes
 				}
 				return out, in[end:], nil
 			}
@@ -447,25 +518,30 @@ func unquote(in string, unescape bool) (out, rem string, err error) {
 		// Handle quoted strings with escape sequences.
 		var buf []byte
 		in0 := in
-		in = in[1:] // skip starting quote
+		in = in[openSz:] // skip starting quote
 		if unescape {
 			buf = make([]byte, 0, 3*end/2) // try to avoid more allocations
 		}
-		for len(in) > 0 && in[0] != quote {
+		for len(in) > 0 {
+			// Stop at a closing quote of the same family.
+			r, _ := utf8.DecodeRuneInString(in)
+			if isFamilyQuote(r, quote) {
+				break
+			}
 			// Process the next character,
 			// rejecting any unescaped newline characters which are invalid.
-			r, multibyte, rem, err := UnquoteChar(in, quote)
-			if in[0] == '\n' || err != nil {
+			value, multibyte, rest, e := UnquoteChar(in, quote)
+			if in[0] == '\n' || e != nil {
 				return "", in0, ErrSyntax
 			}
-			in = rem
+			in = rest
 
 			// Append the character if unescaping the input.
 			if unescape {
-				if r < utf8.RuneSelf || !multibyte {
-					buf = append(buf, byte(r))
+				if value < utf8.RuneSelf || !multibyte {
+					buf = append(buf, byte(value))
 				} else {
-					buf = utf8.AppendRune(buf, r)
+					buf = utf8.AppendRune(buf, value)
 				}
 			}
 
@@ -476,10 +552,14 @@ func unquote(in string, unescape bool) (out, rem string, err error) {
 		}
 
 		// Verify that the string ends with a terminating quote.
-		if !(len(in) > 0 && in[0] == quote) {
+		if len(in) == 0 {
 			return "", in0, ErrSyntax
 		}
-		in = in[1:] // skip terminating quote
+		closeR, closeRuneSz := utf8.DecodeRuneInString(in)
+		if !isFamilyQuote(closeR, quote) {
+			return "", in0, ErrSyntax
+		}
+		in = in[closeRuneSz:] // skip terminating quote
 
 		if unescape {
 			return string(buf), in, nil

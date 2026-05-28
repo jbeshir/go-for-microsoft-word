@@ -450,7 +450,9 @@ func MakeFromLiteral(lit string, tok token.Token, zero uint) Value {
 
 	case token.CHAR:
 		if n := len(lit); n >= 2 {
-			if code, _, _, err := strconv.UnquoteChar(lit[1:n-1], '\''); err == nil {
+			_, openSz := utf8.DecodeRuneInString(lit)
+			_, closeSz := utf8.DecodeLastRuneInString(lit)
+			if code, _, _, err := strconv.UnquoteChar(lit[openSz:n-closeSz], '\''); err == nil {
 				return MakeInt64(int64(code))
 			}
 		}

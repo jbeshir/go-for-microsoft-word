@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -815,7 +816,6 @@ var errors = []struct {
 	{`"` + "abc\ufeffdef" + `"`, token.STRING, 4, `"` + "abc\ufeffdef" + `"`, "illegal byte order mark"}, // only first BOM is ignored
 	{"abc\x00def", token.IDENT, 3, "abc", "illegal character NUL"},
 	{"abc\x00", token.IDENT, 3, "abc", "illegal character NUL"},
-	{"“abc”", token.ILLEGAL, 0, "abc", `curly quotation mark '“' (use neutral '"')`},
 }
 
 func TestScanErrors(t *testing.T) {
@@ -1341,5 +1341,96 @@ func TestScannerEndReuse(t *testing.T) {
 
 	if end := s.End(); end != token.NoPos {
 		t.Errorf("s.End() = %v; want token.NoPos", end)
+	}
+}
+
+func TestSmartQuotes(t *testing.T) {
+	scanOnce := func(src string) (tok token.Token, lit string, errs []string) {
+		var s Scanner
+		eh := func(_ token.Position, msg string) { errs = append(errs, msg) }
+		s.Init(fset.AddFile("", fset.Base(), len(src)), []byte(src), eh, dontInsertSemis)
+		_, tok, lit = s.Scan()
+		return
+	}
+
+	// All 9 (open, close) combinations for double-quote strings.
+	dquotes := []rune{'"', '\u201C', '\u201D'}
+	for _, open := range dquotes {
+		for _, close := range dquotes {
+			src := string(open) + "foo" + string(close)
+			tok, lit, errs := scanOnce(src)
+			if tok != token.STRING {
+				t.Errorf("string open=%U close=%U: got token %s, want STRING", open, close, tok)
+				continue
+			}
+			if lit != src {
+				t.Errorf("string open=%U close=%U: got lit %q, want %q", open, close, lit, src)
+			}
+			if len(errs) != 0 {
+				t.Errorf("string open=%U close=%U: unexpected errors: %v", open, close, errs)
+			}
+			if got, err := strconv.Unquote(lit); err != nil || got != "foo" {
+				t.Errorf("string open=%U close=%U: Unquote(%q) = %q, %v; want %q, nil", open, close, lit, got, err, "foo")
+			}
+		}
+	}
+
+	// All 9 (open, close) combinations for single-quote runes.
+	squotes := []rune{'\'', '\u2018', '\u2019'}
+	for _, open := range squotes {
+		for _, close := range squotes {
+			src := string(open) + "a" + string(close)
+			tok, lit, errs := scanOnce(src)
+			if tok != token.CHAR {
+				t.Errorf("rune open=%U close=%U: got token %s, want CHAR", open, close, tok)
+				continue
+			}
+			if lit != src {
+				t.Errorf("rune open=%U close=%U: got lit %q, want %q", open, close, lit, src)
+			}
+			if len(errs) != 0 {
+				t.Errorf("rune open=%U close=%U: unexpected errors: %v", open, close, errs)
+			}
+			if got, err := strconv.Unquote(lit); err != nil || got != "a" {
+				t.Errorf("rune open=%U close=%U: Unquote(%q) = %q, %v; want %q, nil", open, close, lit, got, err, "a")
+			}
+		}
+	}
+
+	// Escape inside curly string: “foo\"bar”
+	{
+		src := "\u201Cfoo\\\"bar\u201D"
+		tok, lit, errs := scanOnce(src)
+		if tok != token.STRING {
+			t.Errorf("escape test: got token %s, want STRING", tok)
+		}
+		if lit != src {
+			t.Errorf("escape test: got lit %q, want %q", lit, src)
+		}
+		if len(errs) != 0 {
+			t.Errorf("escape test: unexpected errors: %v", errs)
+		}
+		if got, err := strconv.Unquote(lit); err != nil || got != "foo\"bar" {
+			t.Errorf("escape test: Unquote(%q) = %q, %v; want %q, nil", lit, got, err, "foo\"bar")
+		}
+	}
+
+	// Unterminated: “foo (no close)
+	{
+		src := "\u201Cfoo"
+		tok, _, errs := scanOnce(src)
+		if tok != token.STRING {
+			t.Errorf("unterminated test: got token %s, want STRING", tok)
+		}
+		found := false
+		for _, msg := range errs {
+			if strings.Contains(msg, "not terminated") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("unterminated test: want error containing 'not terminated', got: %v", errs)
+		}
 	}
 }

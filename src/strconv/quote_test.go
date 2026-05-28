@@ -254,6 +254,10 @@ var unquotetests = []unQuoteTest{
 	{`"\a\b\f\n\r\t\v\\\""`, "\a\b\f\n\r\t\v\\\""},
 	{`"'"`, "'"},
 
+	// Curly-quote escape aliases inside ASCII-delimited literals.
+	{`"foo\“bar"`, `foo"bar`},
+	{`"\”"`, `"`},
+
 	{`'a'`, "a"},
 	{`'☹'`, "☹"},
 	{`'\a'`, "\a"},

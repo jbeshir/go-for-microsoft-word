@@ -409,16 +409,16 @@ Src:
 						continue
 					}
 					if p.Text[0] == '"' {
-						dst[start.i].(*emphPlain).Text = "“"
-						p.Text = "”"
+						dst[start.i].(*emphPlain).Text = "\u201C"
+						p.Text = "\u201D"
 						dst = append(dst, p)
 						*stk = (*stk)[:i]
 						// no trimStack
 						continue Src
 					}
 					if p.Text[0] == '\'' {
-						dst[start.i].(*emphPlain).Text = "‘"
-						p.Text = "’"
+						dst[start.i].(*emphPlain).Text = "\u2018"
+						p.Text = "\u2019"
 						dst = append(dst, p)
 						*stk = (*stk)[:i]
 						// no trimStack
@@ -457,13 +457,13 @@ Src:
 		if p.Text != "" {
 			stk := &stack[stackOf(p.Text[0])]
 			if p.Text == "'" {
-				p.Text = "’"
+				p.Text = "\u2019"
 			}
 			if p.Text == "\"" {
 				if p.canClose {
-					p.Text = "”"
+					p.Text = "\u201D"
 				} else {
-					p.Text = "“"
+					p.Text = "\u201C"
 				}
 			}
 			if p.canOpen {

@@ -167,7 +167,7 @@ func TestPlatformVerifier(t *testing.T) {
 				ExtKeyUsage:  []ExtKeyUsage{ExtKeyUsageServerAuth},
 			},
 			selfSigned: true,
-			macosErr:   "x509: “valid.testing.golang.invalid” certificate is not trusted",
+			macosErr:   "x509: \u201Cvalid.testing.golang.invalid\u201D certificate is not trusted",
 			windowsErr: "x509: certificate signed by unknown authority",
 		},
 		{
@@ -191,7 +191,7 @@ func TestPlatformVerifier(t *testing.T) {
 				NotAfter:     now.Add(time.Hour),
 				ExtKeyUsage:  []ExtKeyUsage{ExtKeyUsageEmailProtection},
 			},
-			macosErr:   "x509: “valid.testing.golang.invalid” certificate is not permitted for this usage",
+			macosErr:   "x509: \u201Cvalid.testing.golang.invalid\u201D certificate is not permitted for this usage",
 			windowsErr: "x509: certificate specifies an incompatible key usage",
 		},
 	}

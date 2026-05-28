@@ -810,7 +810,7 @@ func nlTitleSpan(c *context) bool {
 
 // Not part of CLDR, but see https://unicode.org/cldr/trac/ticket/7078.
 func afnlRewrite(c *context) {
-	if c.hasPrefix("'") || c.hasPrefix("’") {
+	if c.hasPrefix("'") || c.hasPrefix("\u2019") {
 		c.isMidWord = true
 	}
 }

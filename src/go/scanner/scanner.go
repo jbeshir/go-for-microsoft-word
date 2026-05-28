@@ -574,9 +574,26 @@ func (s *Scanner) scanEscape(quote rune) bool {
 	var n int
 	var base, max uint32
 	switch s.ch {
-	case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\', quote:
+	case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\':
 		s.next()
 		return true
+	case quote:
+		s.next()
+		return true
+	case '\u201C', '\u201D':
+		if isDoubleQuote(quote) {
+			s.next()
+			return true
+		}
+		s.error(offs, "unknown escape sequence")
+		return false
+	case '\u2018', '\u2019':
+		if isSingleQuote(quote) {
+			s.next()
+			return true
+		}
+		s.error(offs, "unknown escape sequence")
+		return false
 	case '0', '1', '2', '3', '4', '5', '6', '7':
 		n, base, max = 3, 8, 255
 	case 'x':
@@ -621,16 +638,12 @@ func (s *Scanner) scanEscape(quote rune) bool {
 	return true
 }
 
-func (s *Scanner) scanRune() string {
-	// '\'' opening already consumed
-	offs := s.offset - 1
-
+func (s *Scanner) scanRune(offs int) string {
 	valid := true
 	n := 0
 	for {
 		ch := s.ch
 		if ch == '\n' || ch < 0 {
-			// only report error if we don't have one already
 			if valid {
 				s.error(offs, "rune literal not terminated")
 				valid = false
@@ -638,7 +651,7 @@ func (s *Scanner) scanRune() string {
 			break
 		}
 		s.next()
-		if ch == '\'' {
+		if isSingleQuote(ch) {
 			break
 		}
 		n++
@@ -646,7 +659,6 @@ func (s *Scanner) scanRune() string {
 			if !s.scanEscape('\'') {
 				valid = false
 			}
-			// continue to read to closing quote
 		}
 	}
 
@@ -657,10 +669,7 @@ func (s *Scanner) scanRune() string {
 	return string(s.src[offs:s.offset])
 }
 
-func (s *Scanner) scanString() string {
-	// '"' opening already consumed
-	offs := s.offset - 1
-
+func (s *Scanner) scanString(offs int) string {
 	for {
 		ch := s.ch
 		if ch == '\n' || ch < 0 {
@@ -668,7 +677,7 @@ func (s *Scanner) scanString() string {
 			break
 		}
 		s.next()
-		if ch == '"' {
+		if isDoubleQuote(ch) {
 			break
 		}
 		if ch == '\\' {
@@ -857,6 +866,7 @@ scanAgain:
 		insertSemi = true
 		tok, lit = s.scanNumber()
 	default:
+		startOff := s.offset
 		s.next() // always make progress
 		switch ch {
 		case eof:
@@ -871,14 +881,14 @@ scanAgain:
 			// from s.skipWhitespace()
 			s.insertSemi = false // newline consumed
 			return pos, token.SEMICOLON, "\n"
-		case '"':
+		case '"', '\u201C', '\u201D':
 			insertSemi = true
 			tok = token.STRING
-			lit = s.scanString()
-		case '\'':
+			lit = s.scanString(startOff)
+		case '\'', '\u2018', '\u2019':
 			insertSemi = true
 			tok = token.CHAR
-			lit = s.scanRune()
+			lit = s.scanRune(startOff)
 		case '`':
 			insertSemi = true
 			tok = token.STRING
@@ -978,13 +988,7 @@ scanAgain:
 		default:
 			// next reports unexpected BOMs - don't repeat
 			if ch != bom {
-				// Report an informative error for U+201[CD] quotation
-				// marks, which are easily introduced via copy and paste.
-				if ch == '“' || ch == '”' {
-					s.errorf(s.file.Offset(pos), "curly quotation mark %q (use neutral %q)", ch, '"')
-				} else {
-					s.errorf(s.file.Offset(pos), "illegal character %#U", ch)
-				}
+				s.errorf(s.file.Offset(pos), "illegal character %#U", ch)
 			}
 			insertSemi = s.insertSemi // preserve insertSemi info
 			tok = token.ILLEGAL
@@ -996,4 +1000,12 @@ scanAgain:
 	}
 
 	return
+}
+
+func isDoubleQuote(ch rune) bool {
+	return ch == '"' || ch == '\u201C' || ch == '\u201D'
+}
+
+func isSingleQuote(ch rune) bool {
+	return ch == '\'' || ch == '\u2018' || ch == '\u2019'
 }

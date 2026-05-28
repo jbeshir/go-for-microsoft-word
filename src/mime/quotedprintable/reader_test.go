@@ -64,8 +64,8 @@ func TestReader(t *testing.T) {
 		// Example from RFC 2045:
 		{in: "Now's the time =\n" + "for all folk to come=\n" + " to the aid of their country.",
 			want: "Now's the time for all folk to come to the aid of their country."},
-		{in: "accept UTF-8 right quotation mark: ’",
-			want: "accept UTF-8 right quotation mark: ’"},
+		{in: "accept UTF-8 right quotation mark: \u2019",
+			want: "accept UTF-8 right quotation mark: \u2019"},
 
 		// Transport padding
 		{in: "foo= \r\nbar", want: "foobar"},

@@ -1313,6 +1313,14 @@ const (
 	// packages to apply number normalization during printing,
 	// rather than by modifying the AST in advance.
 	normalizeNumbers Mode = 1 << 30
+
+	// normalizeQuotes means to rewrite curly-quote delimiters of
+	// string and rune literals to their ASCII forms while printing.
+	// Body content (including any \<curly> escape sequences) is
+	// left untouched.
+	//
+	// This value is known in and used by go/format and cmd/gofmt.
+	normalizeQuotes Mode = 1 << 29
 )
 
 // A Config node controls the output of Fprint.

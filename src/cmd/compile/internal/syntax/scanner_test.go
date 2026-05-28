@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -762,6 +763,118 @@ func TestIssue33961(t *testing.T) {
 
 		if !got.bad {
 			t.Errorf("%q: got error but bad not set", lit)
+		}
+	}
+}
+
+func TestSmartQuotes(t *testing.T) {
+	scan := func(src string) (s scanner, errs []string) {
+		s.init(strings.NewReader(src), func(_, _ uint, msg string) {
+			errs = append(errs, msg)
+		}, 0)
+		s.next()
+		return
+	}
+
+	dquotes := []rune{'"', '\u201C', '\u201D'}
+	squotes := []rune{'\'', '\u2018', '\u2019'}
+
+	// All 9 combinations of double-quote delimiters for string literals.
+	for _, open := range dquotes {
+		for _, close := range dquotes {
+			src := string(open) + "foo" + string(close)
+			s, errs := scan(src)
+			if len(errs) > 0 {
+				t.Errorf("string %q: unexpected errors: %v", src, errs)
+				continue
+			}
+			if s.tok != _Literal {
+				t.Errorf("string %q: got tok %s; want _Literal", src, s.tok)
+				continue
+			}
+			if s.kind != StringLit {
+				t.Errorf("string %q: got kind %v; want StringLit", src, s.kind)
+			}
+			if s.bad {
+				t.Errorf("string %q: got bad=true", src)
+			}
+			if s.lit != src {
+				t.Errorf("string %q: got lit %q; want %q", src, s.lit, src)
+			}
+			if got, err := strconv.Unquote(s.lit); err != nil {
+				t.Errorf("string %q: strconv.Unquote(%q) error: %v", src, s.lit, err)
+			} else if got != "foo" {
+				t.Errorf("string %q: strconv.Unquote(%q) = %q; want %q", src, s.lit, got, "foo")
+			}
+		}
+	}
+
+	// All 9 combinations of single-quote delimiters for rune literals.
+	for _, open := range squotes {
+		for _, close := range squotes {
+			src := string(open) + "a" + string(close)
+			s, errs := scan(src)
+			if len(errs) > 0 {
+				t.Errorf("rune %q: unexpected errors: %v", src, errs)
+				continue
+			}
+			if s.tok != _Literal {
+				t.Errorf("rune %q: got tok %s; want _Literal", src, s.tok)
+				continue
+			}
+			if s.kind != RuneLit {
+				t.Errorf("rune %q: got kind %v; want RuneLit", src, s.kind)
+			}
+			if s.bad {
+				t.Errorf("rune %q: got bad=true", src)
+			}
+			if s.lit != src {
+				t.Errorf("rune %q: got lit %q; want %q", src, s.lit, src)
+			}
+			if got, err := strconv.Unquote(s.lit); err != nil {
+				t.Errorf("rune %q: strconv.Unquote(%q) error: %v", src, s.lit, err)
+			} else if got != "a" {
+				t.Errorf("rune %q: strconv.Unquote(%q) = %q; want %q", src, s.lit, got, "a")
+			}
+		}
+	}
+
+	// Escape inside a curly-delimited string: “ + foo + \ + ” + bar + ”
+	{
+		src := "\u201Cfoo\\\u201Dbar\u201D"
+		s, errs := scan(src)
+		if len(errs) > 0 {
+			t.Errorf("escape test: unexpected errors: %v", errs)
+		}
+		if s.bad {
+			t.Errorf("escape test: got bad=true")
+		}
+		if s.lit != src {
+			t.Errorf("escape test: got lit %q; want %q", s.lit, src)
+		}
+		if got, err := strconv.Unquote(s.lit); err != nil {
+			t.Errorf("escape test: strconv.Unquote(%q) error: %v", s.lit, err)
+		} else if got != "foo\"bar" {
+			t.Errorf("escape test: strconv.Unquote(%q) = %q; want %q", s.lit, got, "foo\"bar")
+		}
+	}
+
+	// Negative test: unterminated curly-open string.
+	{
+		src := "\u201Cfoo"
+		s, errs := scan(src)
+		if !s.bad {
+			t.Errorf("unterminated: got bad=false; want true")
+		}
+		found := false
+		for _, e := range errs {
+			if strings.Contains(e, "not terminated") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("unterminated: want error containing \"not terminated\"; got %v", errs)
 		}
 	}
 }
